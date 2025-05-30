@@ -1,10 +1,9 @@
-# detect.py (for image files)
 import cv2
 import torch
 import numpy as np
 import os
 import glob
-from model import EmotionLightCNN
+from model import ModelCNN
 from torchvision import transforms
 import yaml
 
@@ -13,12 +12,12 @@ class ImageEmotionDetector:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.emotion_model = self.load_emotion_model(emotion_model)
         
-        # Load class names from data.yaml
+        # Cargar los nombres de las clases desde data.yaml
         with open('../data/data.yaml', 'r') as f:
             config = yaml.safe_load(f)
         self.labels = config['names']
         
-        # Spanish emotion labels
+        # Etiquetas en español
         self.spanish_labels = {
             'Anger': 'Enojado',
             'Contempt': 'Desprecio',
@@ -30,7 +29,7 @@ class ImageEmotionDetector:
             'Surprise': 'Sorpresa'
         }
         
-        # Image transformations
+        # transformaciones de imagen
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize((96, 96)),
@@ -38,19 +37,19 @@ class ImageEmotionDetector:
             transforms.Normalize(mean=[0.5], std=[0.5])
         ])
         
-        # Load Haar cascade for face detection
+        # Cargar el clasificador Haar para detección de rostros
         self.face_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         )
         
-        # Create CLAHE object for contrast enhancement
+        # Creamos el objeto CLAHE para mejorar el contraste
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     
     def load_emotion_model(self, model_path):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model not found at {model_path}")
             
-        model = EmotionLightCNN(num_classes=8)
+        model = ModelCNN(num_classes=8)
         model.load_state_dict(torch.load(model_path, map_location=self.device))
         model.eval()
         return model.to(self.device)
@@ -60,14 +59,14 @@ class ImageEmotionDetector:
         faces = self.face_cascade.detectMultiScale(
             gray, 
             scaleFactor=1.1,
-            minNeighbors=8,    # Increased to reduce false positives
+            minNeighbors=8,    # Icrementar para reducir falsos positivos
             minSize=(80, 80),
             flags=cv2.CASCADE_SCALE_IMAGE
         )
         return faces
     
     def preprocess_face(self, face_img):
-        # Apply CLAHE for better contrast normalization
+        # Aplicamos CLAHE para mejorar el contraste
         face_img = self.clahe.apply(face_img)
         return face_img
     
@@ -88,10 +87,10 @@ class ImageEmotionDetector:
             gray_face = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
             
             try:
-                # Apply preprocessing
+                # Aplicamos preprocesamiento a la cara
                 processed_face = self.preprocess_face(gray_face)
                 
-                # Apply transformations
+                # Aplicamos transformaciones
                 input_tensor = self.transform(processed_face).unsqueeze(0).to(self.device)
                 
                 with torch.no_grad():
@@ -101,12 +100,12 @@ class ImageEmotionDetector:
                     emotion = self.labels[pred.item()]
                     confidence = probabilities[0][pred.item()].item()
                 
-                # Confidence thresholding
+                # NOTA IMPORTANTE: Si la confianza es baja, asignamos "Neutral" con alta confianza
                 if confidence < 0.7:
                     emotion = "Neutral"
                     confidence = 0.99
                 
-                # Get Spanish label
+                # Obtener la etiqueta en español
                 emotion_spanish = self.spanish_labels.get(emotion, emotion)
                 
                 if emotion == "Happy":
@@ -125,7 +124,7 @@ class ImageEmotionDetector:
             except Exception as e:
                 print(f"Error processing face: {e}")
         
-        # Save result
+        # Guardar el resultado
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, os.path.basename(image_path))
         cv2.imwrite(output_path, image)
@@ -144,8 +143,8 @@ class ImageEmotionDetector:
 if __name__ == "__main__":
     detector = ImageEmotionDetector()
     
-    # Detect in single image
+    # NOTA PARA DETECTAR EN UNA IMAGEN INDIVIDUAL
     # detector.detect_emotion_in_image("path/to/image.jpg")
     
-    # Detect in directory
+    # DETECTAR EMOCIONES EN UN DIRECTORIO DE IMÁGENES
     detector.detect_emotion_in_directory("../data/valid/images")

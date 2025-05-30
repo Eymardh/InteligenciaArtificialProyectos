@@ -13,7 +13,7 @@ class YOLOEmotionDataset(Dataset):
         self.split = split
         self.transform = transform
         
-        # Load class names from data.yaml
+        # Cargamos los datos del archivo data.yaml
         yaml_path = os.path.join(root_dir, 'data.yaml')
         try:
             with open(yaml_path, 'r') as f:
@@ -26,7 +26,7 @@ class YOLOEmotionDataset(Dataset):
         self.image_dir = os.path.join(root_dir, split, 'images')
         self.label_dir = os.path.join(root_dir, split, 'labels')
         
-        # Get image files with error handling
+        # Obtenemos la imagenes con manejo de errores
         try:
             self.image_files = [f for f in os.listdir(self.image_dir) 
                               if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
@@ -41,7 +41,7 @@ class YOLOEmotionDataset(Dataset):
         img_name = self.image_files[idx]
         img_path = os.path.join(self.image_dir, img_name)
         
-        # Read and convert to grayscale
+        # Leemos y convertimos la imagen a escala de grises
         try:
             img = cv2.imread(img_path)
             if img is None:
@@ -49,15 +49,16 @@ class YOLOEmotionDataset(Dataset):
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         except Exception as e:
             print(f"Error reading image {img_path}: {e}")
-            # Return a blank image placeholder
+            # Retornamos una imagen en blanco como placeholder
+            # Esto es útil para evitar que el entrenamiento falle por una imagen corrupta
             gray = np.zeros((96, 96), dtype=np.uint8)
             return self.transform(gray) if self.transform else gray, 0
         
-        # Read label file
+        # Leemos el archivo de etiquetas
         label_name = os.path.splitext(img_name)[0] + '.txt'
         label_path = os.path.join(self.label_dir, label_name)
         
-        class_id = 0  # Default class
+        class_id = 0 
         try:
             if not os.path.exists(label_path):
                 raise FileNotFoundError(f"Label file not found: {label_path}")
@@ -65,14 +66,14 @@ class YOLOEmotionDataset(Dataset):
             with open(label_path, 'r') as f:
                 lines = f.readlines()
             
-            # Use first annotation (assuming one face per image)
+            # Usamos la primera línea del archivo de etiquetas
             if not lines:
                 raise ValueError("Empty label file")
                 
             line = lines[0].strip().split()
             class_id = int(line[0])
             
-            # Convert YOLO bbox to pixel coordinates
+            # Convertimos las coordenadas de la caja delimitadora
             h, w = gray.shape
             cx, cy, bw, bh = map(float, line[1:5])
             x1 = max(0, int((cx - bw/2) * w))
@@ -80,20 +81,20 @@ class YOLOEmotionDataset(Dataset):
             x2 = min(w, int((cx + bw/2) * w))
             y2 = min(h, int((cy + bh/2) * h))
             
-            # Crop face
+            # corte la cara de la imagen
             face = gray[y1:y2, x1:x2]
             
             if face.size == 0:
                 print(f"Warning: Empty face crop in {img_name}")
                 face = gray  # Fallback to entire image
             
-            # Resize while maintaining aspect ratio
+            # Rredimensionar la cara
             h, w = face.shape
-            if h < 10 or w < 10:  # Face too small
-                face = gray  # Fallback to entire image
+            if h < 10 or w < 10:  # Por si la cara es demasiado pequeña
+                face = gray 
                 h, w = face.shape
             
-            # Pad to square if needed
+            # Ajustar el tamaño de la cara a un cuadrado
             if h != w:
                 size = max(h, w)
                 pad_h = (size - h) // 2
@@ -101,21 +102,20 @@ class YOLOEmotionDataset(Dataset):
                 face = np.pad(face, ((pad_h, size-h-pad_h), (pad_w, size-w-pad_w)), 
                              mode='constant', constant_values=0)
             
-            # Resize to 96x96
+            # Redimensionar la cara a 96x96
             face = cv2.resize(face, (96, 96))
             
         except Exception as e:
             print(f"Error processing {label_path}: {e}")
-            # Use entire image as fallback
             face = cv2.resize(gray, (96, 96))
         
-        # Apply transformations
+        # Aplicar transformaciones si están definidas
         if self.transform:
             try:
                 face = self.transform(face)
             except Exception as e:
                 print(f"Error transforming image {img_name}: {e}")
-                # Create a placeholder tensor
+                # Creamos un placeholder si falla la transformación
                 placeholder = torch.zeros(1, 96, 96)
                 return placeholder, class_id
         
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     dataset = YOLOEmotionDataset(root_dir='../data', split='train')
     print(f"Dataset size: {len(dataset)}")
     
-    # Visualize some samples
+    # Visualizamos algunos ejemplos
     os.makedirs("../reports/samples", exist_ok=True)
     for i in [0, 100, 500, 1000]:
         if i < len(dataset):
@@ -177,7 +177,7 @@ if __name__ == "__main__":
             visualize_sample(dataset, i, save_path)
             print(f"Saved sample {i} to {save_path}")
     
-    # Print dataset statistics
+    # Imprimimos estadísticas del dataset
     print("\nDataset statistics:")
     print(f"Number of samples: {len(dataset)}")
     print(f"Image shape: {dataset[0][0].shape if len(dataset) > 0 else 'N/A'}")

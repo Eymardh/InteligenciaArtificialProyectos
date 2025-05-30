@@ -1,13 +1,12 @@
-# model.py
 import torch.nn as nn
 import torch.nn.functional as F
 
 import torch.nn as nn
 import torch.nn.functional as F
 
-class EmotionCNN(nn.Module):
+class ModelCNN(nn.Module):
     def __init__(self, num_classes=8):
-        super(EmotionCNN, self).__init__()
+        super(ModelCNN, self).__init__()
         self.conv1 = nn.Conv2d(1, 64, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(64)
         self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
@@ -20,11 +19,10 @@ class EmotionCNN(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.dropout = nn.Dropout(0.5)
         
-        self.fc1 = nn.Linear(512 * 6 * 6, 1024)  # Adjusted for 96x96 input
+        self.fc1 = nn.Linear(512 * 6 * 6, 1024)  # Ajustamos el tamaño de entrada
         self.fc2 = nn.Linear(1024, num_classes)
     
     def forward(self, x):
-        # Input: 1x96x96
         x = self.pool(F.relu(self.bn1(self.conv1(x))))  # 64x48x48
         x = self.pool(F.relu(self.bn2(self.conv2(x))))  # 128x24x24
         x = self.pool(F.relu(self.bn3(self.conv3(x))))  # 256x12x12

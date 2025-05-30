@@ -1,4 +1,3 @@
-# train.py
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -8,16 +7,19 @@ import os
 import numpy as np
 import yaml
 from collections import Counter
-from model import EmotionCNN
+from model import ModelCNN
 from utils import YOLOEmotionDataset, get_transforms
 import matplotlib.pyplot as plt
 
-# Load configuration
+# Cargar configuración desde data.yaml
 with open('../data/data.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Funcion para visualizar la distribución de clases
+# Esta función toma los conteos de clases y los nombres de las clases, y genera un gráfico de barras
+# el cual es util para entender el balance de clases en el conjunto de entrenamiento.
 def plot_class_distribution(class_counts, class_names):
     plt.figure(figsize=(10, 6))
     plt.bar(class_names, class_counts)
@@ -30,7 +32,7 @@ def plot_class_distribution(class_counts, class_names):
     plt.close()
 
 def main():
-    # Create datasets
+    # Creamos el dataset y las transformaciones
     train_transform, val_transform = get_transforms()
     
     train_dataset = YOLOEmotionDataset(
@@ -45,7 +47,7 @@ def main():
         transform=val_transform
     )
     
-    # Calculate class distribution for weighting
+    # Calcular la distribución de clases en el conjunto de entrenamiento
     all_labels = []
     for i in range(len(train_dataset)):
         try:
@@ -60,16 +62,16 @@ def main():
         count = class_counts.get(i, 0)
         print(f"  {name}: {count} samples")
     
-    # Visualize class distribution
+    # Visualizar la distribución de clases
     plot_class_distribution([class_counts.get(i, 0) for i in range(len(config['names']))], 
                            config['names'])
     
-    # Calculate class weights
+    # Calculamos los pesos de clase para el muestreo ponderado
     total_samples = sum(class_counts.values())
     class_weights = [total_samples / (class_counts[i] + 1e-5) for i in range(len(config['names']))]
     class_weights = torch.tensor(class_weights, dtype=torch.float).to(device)
     
-    # Create weighted sampler
+    # Cramos un muestreo ponderado para manejar el desbalance de clases
     sample_weights = [class_weights[label] for _, label in train_dataset]
     sampler = WeightedRandomSampler(
         weights=sample_weights,
@@ -77,10 +79,10 @@ def main():
         replacement=True
     )
     
-# Create data loaders (reduce batch size for better generalization)
+# Creamos los DataLoaders 
     train_loader = DataLoader(
         train_dataset, 
-        batch_size=32,  # Reduced from 64
+        batch_size=32,  # Reducimos de 64 a 32
         sampler=sampler,
         num_workers=4,
         pin_memory=True
@@ -88,26 +90,26 @@ def main():
     
     val_loader = DataLoader(
         val_dataset, 
-        batch_size=32,  # Reduced from 64
+        batch_size=32,  # Reducimos de 64 a 32
         shuffle=False,
         num_workers=4,
         pin_memory=True
     )
     
-    # Initialize model
-    model = EmotionCNN(num_classes=8).to(device)
+    # Inicializamos el modelo
+    model = ModelCNN(num_classes=8).to(device)
     
-    # Verify model architecture
+    # Verificamos la arquitectura del modelo e imprimimos
     print("\nModel architecture:")
     print(model)
     
- # Handle class imbalance with weighted loss
+   # Definimos la función de pérdida con pesos de clase
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     
-    # Use Adam optimizer with lower learning rate
+    # Usamos el optimizador Adam con un learning rate reducido
     optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-4)  # Reduced LR
     
-    # Learning rate scheduler
+    # Learning rate scheduler para reducir el LR en caso de no mejora
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 
         mode='max', 
@@ -119,16 +121,16 @@ def main():
     val_losses = []
     val_accuracies = []
     
-    # Create models directory
+    # Creamos el directorio para guardar los modelos
     os.makedirs('../models', exist_ok=True)
     
-    # Early stopping parameters
+    # Configuramos early stopping
     patience = 5
     early_stop_counter = 0
     
-    # Training loop
-    for epoch in range(50):  # Max 50 epochs
-        # Training phase
+    # Entrenamos el modelo en un bucle
+    for epoch in range(50):  # Max 50 epochs para evitar overfitting
+        #  Fase de entrenamiento
         model.train()
         train_loss = 0.0
         
@@ -146,7 +148,7 @@ def main():
         train_loss = train_loss / len(train_loader.sampler)
         train_losses.append(train_loss)
         
-        # Validation phase
+        # Validamos el modelo
         model.eval()
         val_loss = 0.0
         correct = 0
@@ -175,13 +177,13 @@ def main():
         val_acc = correct / total
         val_accuracies.append(val_acc)
         
-        # Update learning rate
+        # Actualizamos el scheduler
         scheduler.step(val_acc)
         
-        # Print current learning rate
+        # Imprimir el learning rate actual
         current_lr = optimizer.param_groups[0]['lr']
         
-        # Print metrics
+        # Imprimir resultados del epoch y metricas
         print(f'\nEpoch {epoch+1}/50')
         print(f'LR: {current_lr:.6f} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}')
         print(classification_report(
@@ -190,7 +192,7 @@ def main():
             zero_division=0
         ))
         
-        # Save best model
+        # GUardar el mejor modelo
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             early_stop_counter = 0
@@ -203,7 +205,7 @@ def main():
                 print(f"Early stopping at epoch {epoch+1}")
                 break
     
-    # Save training curves
+    #  guardar el modelo final
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
     plt.plot(train_losses, label='Train Loss')
@@ -221,6 +223,8 @@ def main():
     plt.legend()
     
     plt.tight_layout()
+    # Guardar las curvas de entrenamiento
+    # las cuales sirven para visualizar el progreso del entrenamiento y la validación.
     plt.savefig('../reports/training_curves.png')
     plt.close()
     
